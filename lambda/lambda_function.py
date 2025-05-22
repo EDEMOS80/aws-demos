@@ -6,88 +6,69 @@ dynamodb = boto3.resource('dynamodb')
 table = dynamodb.Table('Students')
 
 sns = boto3.client('sns')
-SNS_TOPIC_ARN = 'arn:aws:sns:your-region:your-account-id:student-registration-topic'  # <-- Replace with real ARN
+SNS_TOPIC_ARN = 'arn:aws:sns:us-east-1:021280546444:bruno-topic-sns'
 
 def lambda_handler(event, context):
-    print("🔍 Received event:", json.dumps(event))  # Log the full incoming event
+    print("Received event:", json.dumps(event))  # 🔍 Log full event
 
-    method = event.get('httpMethod')
-    print("🔍 HTTP Method:", method)
+    method = event['httpMethod']
+    print("HTTP method:", method)  # 🔍 Log HTTP method
 
     if method == "POST":
+        body = json.loads(event['body'])
+        print("POST body parsed:", body)  # 🔍 Log parsed POST body
+
+        # Save to DynamoDB
+        table.put_item(Item=body)
+        print("Item saved to DynamoDB")  # 🔍 Confirm save
+
+        # Prepare SNS message
+        message = f"New student registered:\n\n{json.dumps(body, indent=2)}"
         try:
-            body = json.loads(event['body'])
-            print("📝 Parsed body:", body)
-
-            # Store in DynamoDB
-            table.put_item(Item=body)
-            print("✅ Item inserted into DynamoDB")
-
-            # Compose and send SNS message
-            message = f"📘 New student registered:\nName: {body.get('name')}\nEmail: {body.get('email')}\nID: {body.get('studentID')}"
             response = sns.publish(
                 TopicArn=SNS_TOPIC_ARN,
-                Subject="New Student Registered",
+                Subject="New Student Registration",
                 Message=message
             )
-            print("📤 SNS publish response:", response)
+            print("SNS publish success:", response)  # ✅ Log success
+        except Exception as e:
+            print("SNS publish error:", str(e))  # ❌ Log error
 
+        return {
+            "statusCode": 200,
+            "headers": {
+                "Access-Control-Allow-Origin": "*"
+            },
+            "body": json.dumps("Student registered successfully and notification sent.")
+        }
+
+    elif method == "GET":
+        student_id = event['pathParameters']['studentID']
+        print("GET request for studentID:", student_id)
+
+        response = table.get_item(Key={'studentID': student_id})
+        item = response.get('Item')
+
+        if item:
+            print("Student found:", item)
             return {
                 "statusCode": 200,
                 "headers": {
                     "Access-Control-Allow-Origin": "*"
                 },
-                "body": json.dumps("Student registered successfully")
+                "body": json.dumps(item)
             }
-
-        except Exception as e:
-            print("❌ Error during POST:", str(e))
+        else:
+            print("Student not found.")
             return {
-                "statusCode": 500,
+                "statusCode": 404,
                 "headers": {
                     "Access-Control-Allow-Origin": "*"
                 },
-                "body": json.dumps("Internal Server Error")
+                "body": json.dumps("Student not found")
             }
 
-    elif method == "GET":
-        try:
-            student_id = event['pathParameters']['studentID']
-            print("🔍 GET studentID:", student_id)
-
-            response = table.get_item(Key={'studentID': student_id})
-            item = response.get('Item')
-            print("📦 GET item response:", item)
-
-            if item:
-                return {
-                    "statusCode": 200,
-                    "headers": {
-                        "Access-Control-Allow-Origin": "*"
-                    },
-                    "body": json.dumps(item)
-                }
-            else:
-                print("⚠️ Student not found.")
-                return {
-                    "statusCode": 404,
-                    "headers": {
-                        "Access-Control-Allow-Origin": "*"
-                    },
-                    "body": json.dumps("Student not found")
-                }
-
-        except Exception as e:
-            print("❌ Error during GET:", str(e))
-            return {
-                "statusCode": 500,
-                "headers": {
-                    "Access-Control-Allow-Origin": "*"
-                },
-                "body": json.dumps("Internal Server Error")
-            }
-
-    print("⚠️ Unsupported method:", method)
+    print("Unsupported method:", method)
     return {
         "statusCode": 400,
         "headers": {
